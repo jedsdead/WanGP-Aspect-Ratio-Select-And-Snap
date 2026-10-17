@@ -1,0 +1,41 @@
+# Cinema Aspect Ratios for Wan2GP
+
+Adds cinema aspect ratios to Wan2GP's **Megapixels** resolution picker (*Switch to Megapixels*, then *Aspect Ratio*):
+
+| Ratio | Name |
+|---|---|
+| 1.375:1 | Academy |
+| 1.43:1 | IMAX 70mm |
+| 1.66:1 | European Widescreen |
+| 1.85:1 | Flat Widescreen |
+| 1.90:1 | IMAX Digital |
+| 2.00:1 | Univisium |
+| 2.20:1 | Todd-AO / Super Panavision 70 |
+| 2.35:1 | CinemaScope |
+| 2.39:1 | Scope (DCI) |
+| 2.40:1 | Scope / Panavision Anamorphic |
+| 2.55:1 | CinemaScope (1953) |
+| 2.76:1 | Ultra Panavision 70 |
+
+The ratio you pick stays selected as you move the size slider (Wan2GP rounds sizes to 16 pixels, which could
+otherwise read as a neighbouring ratio).
+
+## Snap
+
+The size slider moves in steps of 0.05 megapixels over a wide range, so standard sizes like 1920x800 are hard to hit.
+With **Snap** ticked (the checkbox next to the slider), positions within 5% of a standard frame width (1280, 1920,
+2048, 2560, 3840...) snap to it: for 2.40:1, 1.50 to 1.60 MP give 1920x800. Untick it for Wan2GP's exact sizes.
+
+## Your own ratios
+
+Edit `aspect_ratios.json` in the plugin folder and restart Wan2GP. Ratios can be written `2.40:1`, `2.40` or `12:5`;
+portrait versions as `1:2.40`.
+
+## Install
+
+In Wan2GP, open the **Plugins** tab, paste this repository's URL under *Install New Plugin*, install,
+enable it and restart Wan2GP.
+
+## License
+
+MIT
