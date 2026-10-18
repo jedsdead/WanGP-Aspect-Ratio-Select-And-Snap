@@ -23,8 +23,16 @@ otherwise read as a neighbouring ratio).
 ## Snap
 
 The size slider moves in steps of 0.05 megapixels over a wide range, so standard sizes like 1920x800 are hard to hit.
-With **Snap** ticked (the checkbox next to the slider), positions within 5% of a standard frame width (1280, 1920,
-2048, 2560, 3840...) snap to it: for 2.40:1, 1.50 to 1.60 MP give 1920x800. Untick it for Wan2GP's exact sizes.
+With **Snap** ticked (the checkbox next to the slider), positions within 5% of a standard size snap to it: for 2.40:1,
+1.50 to 1.60 MP give 1920x800. Standard sizes are:
+
+- standard frame widths (1280, 1920, 2048, 2560, 3840...);
+- standard heights (480p, 720p, 768p, 1080p, 1440p, 2160p), rounded the way Wan2GP rounds them (720p 16:9 is
+  1280x704, 768p 16:9 is 1344x768);
+- Wan2GP's presets of that ratio, including your own `resolutions.json`.
+
+With Snap on, the up/down arrows of the number box (and the Up/Down keys in it) jump straight to the next or
+previous standard size. Untick Snap for Wan2GP's exact sizes and its 0.05 steps.
 
 ## Your own ratios
 
