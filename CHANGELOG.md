@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3 (2026-10-21)
+
+- **Grid** dropdown next to Snap, for two-phase generation: snapping and the arrows only use sizes that are multiples
+  of 64 (phase 1 = output / 2) or 96 (2 Phases Plus' Output / 1.5), so phase 1 is exact and the picture doesn't slide
+  at the start of each sliding window. Changing it re-snaps the current size.
+
 ## 0.2 (2026-10-18)
 
 - With Snap on, the number box arrows (and Up/Down keys) step to the next or previous standard size.

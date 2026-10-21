@@ -43,6 +43,9 @@ STANDARD_HEIGHTS = (480, 540, 576, 720, 768, 1080, 1440, 2160)
 SHAPE_TOLERANCE = 0.03   # a generated size counts for a ratio when its shape is within 3% of it
 SAME_SIZE = 0.03         # sizes less than 3% apart in pixels count as one step
 PRESET_TOLERANCE = 0.012  # a preset counts for a ratio when its shape is within 1.2% of it (presets are exact sizes)
+GRID_TOLERANCE = 0.02     # on a two-phase grid, sizes within 2% of the ratio (the grid is coarse)
+GRID_CHOICES = [("Model", "model"), ("64 · ÷2", "64"), ("96 · ÷1.5", "96")]
+MAX_LONG_SIDE = 4096
 _internal = {"depth": 0}  # snapping only applies to the slider, not to Wan2GP's own limit computations
 
 _labels = {}       # ratio value -> dropdown label
@@ -105,13 +108,71 @@ def _preset_sizes(model_def):
         return []
 
 
+def snap_grid():
+    """The two-phase grid chosen for snapping (64 or 96), or None."""
+    value = str(settings.get().get("grid", "model"))
+    return int(value) if value in ("64", "96") else None
+
+
+def snap_block(block):
+    """The block snapped sizes are multiples of: the model's own, or the two-phase grid when one is chosen. With
+    two phases, phase 1 is the output / 2 (or / 1.5) rounded to 32 pixels: it is exactly that fraction, with the
+    same shape as the output, only when both sides are multiples of 64 (or 96). Otherwise phase 1 is slightly
+    stretched and, in sliding windows, the picture slides into place over the first frames of each window."""
+    grid = snap_grid()
+    return block if grid is None else block * grid // math.gcd(block, grid)
+
+
+def grid_sizes(aspect_ratio, block, model_def=None, presets=None):
+    """[(pixels, "WxH")] on the block (a two-phase grid), within GRID_TOLERANCE of the ratio, smallest first: presets
+    on the grid first, then the closest grid sizes for every short side. Sizes less than SAME_SIZE apart count once
+    (the one closest to the ratio)."""
+    rw, rh = map(int, aspect_ratio.split(":"))
+    ratio = rw / rh
+    model_def = model_def or {}
+    max_w, max_h = model_def.get("max_width"), model_def.get("max_height")
+    if presets is None:
+        presets = _preset_sizes(model_def)
+    error = lambda w, h: abs((w / h) / ratio - 1.0)
+    candidates = []
+    for value in presets:
+        try:
+            width, height = map(int, str(value).lower().split("x"))
+        except ValueError:
+            continue
+        if width % block == 0 and height % block == 0 and error(width, height) <= PRESET_TOLERANCE:
+            candidates.append((-1.0, width, height))  # presets first
+    long_ratio = max(ratio, 1 / ratio)
+    for short_side in range(block, MAX_LONG_SIDE + 1, block):
+        exact_long = short_side * long_ratio
+        for long_side in {max(block, math.floor(exact_long / block) * block), max(block, math.ceil(exact_long / block) * block)}:
+            if long_side > MAX_LONG_SIDE:
+                continue
+            width, height = (long_side, short_side) if ratio >= 1 else (short_side, long_side)
+            candidates.append((error(width, height), width, height))
+    sizes = []
+    for err, width, height in sorted(candidates):
+        if (max_w is not None and width > max_w) or (max_h is not None and height > max_h):
+            continue
+        if err > GRID_TOLERANCE:
+            continue
+        pixels = width * height
+        if any(abs(pixels / other - 1.0) < SAME_SIZE for other, _ in sizes):
+            continue
+        sizes.append((pixels, f"{width}x{height}"))
+    return sorted(sizes)
+
+
 def standard_sizes(aspect_ratio, block, model_def=None, presets=None):
     """[(pixels, "WxH")] of the standard sizes for a ratio, smallest first, within the model's maximum width and height:
     * Wan2GP's presets (and your resolutions.json) whose shape is within PRESET_TOLERANCE of the ratio;
     * standard frame widths (1280, 1920, 2048...), the other side from the ratio rounded to the nearest block;
     * standard heights (480p, 720p, 768p, 1080p...): the height to the nearest block (exact halves down, so 720p is
       704 at 32-pixel blocks), the width rounded down to the block as Wan2GP does (768p 16:9 is 1344x768).
-    Sizes less than SAME_SIZE (3%) apart in pixels count once (presets first, then widths, then heights)."""
+    Sizes less than SAME_SIZE (3%) apart in pixels count once (presets first, then widths, then heights).
+    With a two-phase grid chosen, the sizes come from grid_sizes instead."""
+    if snap_grid() is not None:
+        return grid_sizes(aspect_ratio, snap_block(block), model_def, presets)
     rw, rh = map(int, aspect_ratio.split(":"))
     ratio = rw / rh
     model_def = model_def or {}
@@ -150,12 +211,14 @@ def standard_sizes(aspect_ratio, block, model_def=None, presets=None):
 
 
 def snapped_size(megapixels, aspect_ratio, block, model_def=None):
-    """The standard size within half a slider step or SNAP_WINDOW of megapixels (the nearest one), or None."""
+    """The standard size within half a slider step or SNAP_WINDOW of megapixels (the nearest one), or None. With a
+    two-phase grid, always the nearest grid size: no size off the grid is ever used."""
     best = None
+    on_grid = snap_grid() is not None
     for pixels, resolution in standard_sizes(aspect_ratio, block, model_def):
         size_mp = pixels / 1_000_000
         distance = abs(size_mp - float(megapixels))
-        if (distance <= SLIDER_STEP / 2 + 1e-9 or distance <= SNAP_WINDOW * size_mp) and (best is None or distance < best[0]):
+        if (on_grid or distance <= SLIDER_STEP / 2 + 1e-9 or distance <= SNAP_WINDOW * size_mp) and (best is None or distance < best[0]):
             best = (distance, resolution)
     return None if best is None else best[1]
 
@@ -276,6 +339,23 @@ def step_updates(state, megapixels, ratio, direction):
         return unchanged
 
 
+def resnap_updates(state, megapixels, ratio):
+    """Updates for (resolution, resolution_group, resolution_mp) that apply the snapping settings to the current size
+    right away (after the grid or Snap changes), the way releasing the slider does."""
+    unchanged = (gr.update(), gr.update(), gr.update())
+    if not settings.get()["snap"] or not ratio or megapixels is None:
+        return unchanged
+    try:
+        import sys
+        main = sys.modules["__main__"]
+        if main.get_model_def(main.get_state_model_type(state)).get("lock_resolutions"):
+            return unchanged
+        return main.commit_resolution_mp(state, float(megapixels), ratio)
+    except Exception as error:
+        print(f"{LOG_PREFIX} could not apply the snapping settings to the current size: {error!r}")
+        return unchanged
+
+
 # With Snap on, the arrows of the slider's number box (and the Up/Down keys or mouse wheel in it) move to the next or
 # previous standard size instead of 0.05 MP: the step is caught before Gradio sees it, undone, and replaced by a click
 # on one of two hidden buttons. Typing a value in the box is unaffected.
@@ -324,7 +404,7 @@ class CinemaAspectRatiosPlugin(WAN2GPPlugin):
     def __init__(self):
         super().__init__()
         self.name = "Cinema Aspect Ratios"
-        self.version = "0.2"
+        self.version = "0.3"
         self.description = "Adds cinema aspect ratios (1.85, IMAX, 2.39/2.40 Scope, Ultra Panavision...) to the Megapixels resolution picker, with optional snapping to standard sizes."
         self._ui_built = False
         settings.load()
@@ -347,8 +427,8 @@ class CinemaAspectRatiosPlugin(WAN2GPPlugin):
         print(f"{LOG_PREFIX} {len(ratios)} ratio(s) from aspect_ratios.json, {len(added)} added to the picker")
 
     def post_ui_setup(self, components):
-        """A compact "Snap" checkbox in the slider's own row (no extra row or space), and the hidden buttons the
-        number box arrows use to step between standard sizes."""
+        """A compact "Snap" checkbox and "Grid" dropdown in the slider's own row (no extra row), and the hidden
+        buttons the number box arrows use to step between standard sizes."""
         slider = components.get("resolution_mp")
         if self._ui_built or slider is None:
             return {}
@@ -367,11 +447,26 @@ class CinemaAspectRatiosPlugin(WAN2GPPlugin):
                     button = gr.Button(visible=False, elem_id=elem_id)
                     button.click(lambda state, mp, ratio, direction=direction: step_updates(state, mp, ratio, direction),
                                  inputs=step_inputs, outputs=step_outputs, show_progress="hidden", queue=False)
+            grid = gr.Dropdown(choices=GRID_CHOICES, value=str(settings.get().get("grid", "model")), label="Grid",
+                               scale=0, min_width=140, interactive=settings.get()["snap"], elem_id="cinema_aspect_ratios_grid",
+                               info=None)
             snap = gr.Checkbox(value=settings.get()["snap"], label="Snap", scale=0, min_width=70,
                                elem_id="cinema_aspect_ratios_snap")
-            snap.change(lambda value: settings.set_value("snap", bool(value)), inputs=snap, outputs=None,
-                        show_progress="hidden", queue=False)
-            return snap  # created last: it is the one placed next to the slider
+
+            def store_snap(value):
+                settings.set_value("snap", bool(value))
+                return gr.update(interactive=bool(value))
+
+            def store_grid(value):
+                settings.set_value("grid", str(value) if str(value) in ("64", "96") else "model")
+                print(f"{LOG_PREFIX} snap grid: {dict((v, k) for k, v in GRID_CHOICES).get(str(value), value)}")
+
+            snap_event = snap.change(store_snap, inputs=snap, outputs=grid, show_progress="hidden", queue=False)
+            grid_event = grid.change(store_grid, inputs=grid, outputs=None, show_progress="hidden", queue=False)
+            if can_step:  # the current size follows the new setting straight away
+                for event in (snap_event, grid_event):
+                    event.then(resnap_updates, inputs=step_inputs, outputs=step_outputs, show_progress="hidden", queue=False)
+            return snap  # created last: it is the one placed next to the slider (the grid follows it)
 
         self.insert_after("resolution_mp", build_checkbox)
         return {}

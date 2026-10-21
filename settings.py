@@ -6,7 +6,9 @@ import os
 _SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
 DEFAULTS = {
-    "snap": True,   # snap the Megapixels slider to standard frame widths
+    "snap": True,     # snap the Megapixels slider to standard sizes
+    "grid": "model",  # snapped sizes: "model" (its own 16/32 block), "64" (two phases, phase 1 = output / 2),
+                      # "96" (two phases with 2 Phases Plus' Output / 1.5)
 }
 
 _settings = dict(DEFAULTS)

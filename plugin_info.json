@@ -1,8 +1,8 @@
 {
     "name": "Cinema Aspect Ratios",
     "author": "Jedsdeadbaby",
-    "version": "0.2",
+    "version": "0.3",
     "description": "Adds cinema aspect ratios (1.85, IMAX, 2.39/2.40 Scope, Ultra Panavision...) to the Megapixels resolution picker, with optional snapping to standard sizes.",
-    "date": "2026-10-18",
+    "date": "2026-10-21",
     "wan2gp_version": ""
 }
